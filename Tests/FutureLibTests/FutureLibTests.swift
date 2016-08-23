@@ -20,7 +20,7 @@ class FutureLibTests: XCTestCase {
         p.dispatchQueue.async {
             
             if name == "Austin" {
-                sleep(1)
+                sleep(2)
                 p.completeWithSuccess(value: 98.6)
             } else {
                 p.completeWithFail(error: NoCityFound(city: name))
@@ -83,12 +83,32 @@ class FutureLibTests: XCTestCase {
         
     }
 
+    func testTimeout() {
+        
+        let expectation2 = expectation(description: "Testing timeout")
+        
+        getCityTemperature(withName: "Austin")
+            .withTimeout(of: 1)
+            .onSuccess(qos: .userInitiated) { value in
+                XCTFail()
+            }
+            .onFailure { error in
+                switch error {
+                case Errors.timeout  : expectation2.fulfill()
+                default              : XCTFail()
+                }
+        }
+        
+        waitForExpectations(timeout: 5, handler: { error in XCTAssertNil(error, "Timeout") })
+        
+    }
 
     static var allTests : [(String, (FutureLibTests) -> () throws -> Void)] {
         return [
             ("testGetBadCity", testGetBadCity),
             ("testGetGoodCity", testGetGoodCity),
-            ("testBiggerChain", testBiggerChain)
+            ("testBiggerChain", testBiggerChain),
+            ("testTimeout", testTimeout)
         ]
     }
 }
