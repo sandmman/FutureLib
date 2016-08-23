@@ -1,6 +1,10 @@
 import Foundation
 import Dispatch
 
+public enum Errors: Error {
+    case timeout
+}
+
 class Future<T> {
     
     // var dispatchQueue: DispatchQueue?
@@ -10,11 +14,30 @@ class Future<T> {
     var value: Result<T>?
     
     let lock = DispatchSemaphore(value: 0)
-    
+
+    var timer: DispatchSourceTimer? = nil
+
     public init() {
         
     }
-    
+
+    public func withTimeout(of time: Int) -> Future<T> {
+        let timeout = DispatchQueue(label: "future", qos: DispatchQoS.background, attributes: .concurrent)
+        
+        timer = timer ?? DispatchSource.makeTimerSource(flags: DispatchSource.TimerFlags.strict, queue: timeout)
+
+        timer?.scheduleOneshot(deadline: .now() + .seconds(time) )
+        
+        timer?.setEventHandler {
+            print("executed")
+            self.notify(.error(Errors.timeout))
+        }
+        
+        timer?.resume()
+
+        return self
+    }
+
     public func notify(_ value: Result<T>) {
         
         //lock.wait()
@@ -43,17 +66,22 @@ class Future<T> {
             
             self.lock.wait()
             
-            switch self.value! {
-            case .success(let a):
+            if let val = self.value {
+
+                self.killTimer()
                 
-                let returnedValue = completionHander(a)
-                nextFuture.notify(.success(returnedValue))
-                
-            case .error(let error):
-                
-                //self.onFailure?(error)
-                nextFuture.notify(.error(error))
-                
+                switch val {
+                case .success(let a):
+                    
+                    let returnedValue = completionHander(a)
+                    nextFuture.notify(.success(returnedValue))
+                    
+                case .error(let error):
+                    
+                    //self.onFailure?(error)
+                    nextFuture.notify(.error(error))
+                    
+                }
             }
         }
         
@@ -71,12 +99,17 @@ class Future<T> {
     public func onFailure(completionHander: @escaping (Error)->Void) -> Future<T> {
         
         self.lock.wait()
-        
-        switch self.value! {
-        case .success:
-            print("This should not happen")
-        case .error(let error):
-            completionHander(error)
+
+        if let val = self.value {
+
+            self.killTimer()
+
+            switch val {
+            case .success(let vals):
+                print("This should not happen \(vals)")
+            case .error(let error):
+                completionHander(error)
+            }
         }
         
         return self
@@ -90,3 +123,11 @@ class Future<T> {
     
 }
 
+extension Future {
+
+    func killTimer() {
+        timer?.cancel()
+        timer = nil
+    }
+}
+    
